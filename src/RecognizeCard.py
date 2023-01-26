@@ -1,13 +1,15 @@
-from polyfuzz import PolyFuzz
+from fuzzywuzzy import fuzz
 from PIL import Image, ImageFilter
 import pytesseract
 import requests
+import json
 import os
 
 # hard coded variables
 cardOnePos = (50, 50)
 cardTwoPos = (50, 50)
 cardWidth = 540
+minSureness = 90
 
 # below this threshold will be considered black
 thresholdBlack = 128
@@ -56,11 +58,28 @@ def thresholdImageWhiteText(img):
 def getTextFrom(img):
     text = pytesseract.image_to_string(img)
     lines = text.split('\n')
-    searchableText = lines[0].replace(" ", "+")
-    return searchableText
+    return lines[0]
+
+def verifyCard(rawText):
+    global minSureness
+
+    # check for entire string
+    searchableText = rawText.replace(" ", "+")
+    response = requests.get(f'https://data.tcgplayer.com/autocomplete?q={searchableText}')
+    data = json.loads(response.text)
+    for i in range(len(data["products"])):
+        similarity = fuzz.ratio(rawText, data["products"][i]["product-name"])
+        if(similarity >= minSureness):
+            print("The card was verified as:")
+            print(data["products"][i]["product-name"])
+        
+
 
 temp = getTextFrom(thresholdImageBlackText(cropCardOne(webcamImage)))
 print(temp)
 
-response = requests.get(f'https://data.tcgplayer.com/autocomplete?q={temp}')
-print(response.content)
+verifyCard(temp)
+
+#response = requests.get(f'https://data.tcgplayer.com/autocomplete?q={temp}')
+#data = json.loads(response.text)
+#print(data["products"][0]["product-name"])
