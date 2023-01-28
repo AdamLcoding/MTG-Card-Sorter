@@ -3,35 +3,87 @@ from fuzzywuzzy import fuzz
 import pytesseract
 import requests
 import json
+import copy
 import re
 import os
 
-# hard coded variables
-cardOnePos = (50, 50)
-cardTwoPos = (50, 50)
-cardWidth = 540
-minSureness = 75
-versionSpecific = True
-autofindVersion = True
+# hard coded variables {
 
-# below this threshold will be considered black
+# options for including different card versions
+autofindVersion = True
+versionSpecific = True
+
+# minimum similarity value for a fuzzy string comparison
+minSureness = 75
+
+# position is used as the center of the curve on the top left corner
+# width is used as the distance between the position and the top right corner equivalent
+# units are in pixels
+cardOnePos = (9, 9)
+cardTwoPos = (9, 9)
+cardWidth = 654
+
+# grayscale values below this threshold will be considered black
 thresholdBlack = 128
-# above this threshold will be considered white
+# grayscale calues above this threshold will be considered white
 thresholdWhite = 220
 
+# directory specific
 numTexts = len(os.listdir('src/Text_Output_Storage'))
 numImage = len(os.listdir('src/Image_Storage')) - 1
 webcamImage = Image.open(f'src/Image_Storage/Unprocessed{numImage}.png')
 
+#}
+
 def cropCardOne(img):
-    img = img.convert("L")
-    img = img.crop((cardOnePos[0], cardOnePos[1], cardWidth + cardOnePos[0], (cardWidth/7.5) + cardOnePos[1]))
+    img = img.crop((cardOnePos[0], cardOnePos[1], cardWidth+cardOnePos[0], (cardWidth*1.4)+cardOnePos[1]))
+    numImage += 1
+    img.save(f'src/Image_Storage/Card1Raw{numImage}.png')
     return img
 
-def cropCardTwo(img):
+def cropCardOneTop(img):
     img = img.convert("L")
-    img = img.crop((cardTwoPos[0], cardTwoPos[1], cardWidth + cardTwoPos[0], (cardWidth/7.5) + cardTwoPos[1]))
+    img = img.crop((cardOnePos[0], cardOnePos[1]+(cardWidth * 1.3), cardWidth+cardOnePos[0], cardWidth*1.4))
     return img
+
+def cropCardOneBottom(img):
+    img = img.convert("L")
+    img = img.crop((cardOnePos[0], cardOnePos[1], cardWidth+cardOnePos[0], (cardWidth/7.5)+cardOnePos[1]))
+    return img
+
+def crop(cropPosition, card, img):
+    global cardOnePos
+    global cardTwoPos
+    global cardWidth
+    convertToGrayscale = False
+    if card == 1:
+        cardPos = list(cardOnePos)
+    elif card == 2:
+        cardPos = list(cardTwoPos)
+    else:
+        print("invalid card to crop, should be card 1 or 2")
+    cropX = cardPos[0] + cardWidth
+    if cropPosition == "whole":
+        cropY = cardWidth * 1.4 + cardPos[1]
+    elif cropPosition == "bottom":
+        convertToGrayscale = True
+        cardPos[1] = cardWidth * 1.32 + cardPos[1]
+        cropY = cardWidth * 0.08 + cardPos[1]
+    elif cropPosition == "top":
+        convertToGrayscale = True
+        cardPos[0] = cardPos[0] + 0.059 * cardWidth
+        cardPos[1] = cardPos[1] + 0.045 * cardWidth
+        cropX = cropX - 0.15 * cardWidth
+        cropY = cardWidth / 12 + cardPos[1]
+    else:
+        print("you did not select a valid cropping position")
+        return -1
+    img = img.crop((cardPos[0], cardPos[1], cropX, cropY))
+    if convertToGrayscale:
+        img = img.convert("L")
+    img.show()
+    return img
+
 
 def thresholdImageBlackText(img):
     for x in range(img.size[0]):
@@ -141,8 +193,10 @@ def getCardData(cardName):
     numTexts += 1
 
 
-temp = getTextFrom(thresholdImageBlackText(cropCardOne(webcamImage)))
-print(temp)
+temp = crop("top", 1, webcamImage)
 
-temp2 = verifyCard(temp)
-getCardData(temp2)
+#temp = getTextFrom(thresholdImageBlackText(cropCardOne(webcamImage)))
+#print(temp)
+
+#temp2 = verifyCard(temp)
+#getCardData(temp2)

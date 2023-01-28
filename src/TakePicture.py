@@ -6,9 +6,11 @@ cameraNum = 0
 
 pygame.camera.init()
 camlist = pygame.camera.list_cameras()
+print(camlist)
 
-if camlist:
-    cam = pygame.camera.Camera(camlist[cameraNum], (1920, 1080))
+
+if len(camlist) > cameraNum:
+    cam = pygame.camera.Camera(camlist[cameraNum])
     cam.start()
 else:
     print("could not get camera")
