@@ -1,4 +1,5 @@
 from PIL import Image, ImageFilter
+from bs4 import BeautifulSoup
 from fuzzywuzzy import fuzz
 import pytesseract
 import requests
@@ -33,32 +34,22 @@ numTexts = len(os.listdir('src/Text_Output_Storage'))
 numImage = len(os.listdir('src/Image_Storage')) - 1
 webcamImage = Image.open(f'src/Image_Storage/Unprocessed{numImage}.png')
 
+currentCard = 1
+
 #}
 
-def cropCardOne(img):
-    img = img.crop((cardOnePos[0], cardOnePos[1], cardWidth+cardOnePos[0], (cardWidth*1.4)+cardOnePos[1]))
-    numImage += 1
-    img.save(f'src/Image_Storage/Card1Raw{numImage}.png')
-    return img
 
-def cropCardOneTop(img):
-    img = img.convert("L")
-    img = img.crop((cardOnePos[0], cardOnePos[1]+(cardWidth * 1.3), cardWidth+cardOnePos[0], cardWidth*1.4))
-    return img
-
-def cropCardOneBottom(img):
-    img = img.convert("L")
-    img = img.crop((cardOnePos[0], cardOnePos[1], cardWidth+cardOnePos[0], (cardWidth/7.5)+cardOnePos[1]))
-    return img
-
-def crop(cropPosition, card, img):
+def crop(cropPosition):
+    global currentCard
+    global webcamImage
+    img = webcamImage
     global cardOnePos
     global cardTwoPos
     global cardWidth
     convertToGrayscale = False
-    if card == 1:
+    if currentCard == 1:
         cardPos = list(cardOnePos)
-    elif card == 2:
+    elif currentCard == 2:
         cardPos = list(cardTwoPos)
     else:
         print("invalid card to crop, should be card 1 or 2")
@@ -81,9 +72,7 @@ def crop(cropPosition, card, img):
     img = img.crop((cardPos[0], cardPos[1], cropX, cropY))
     if convertToGrayscale:
         img = img.convert("L")
-    img.show()
     return img
-
 
 def thresholdImageBlackText(img):
     for x in range(img.size[0]):
@@ -111,7 +100,7 @@ def thresholdImageWhiteText(img):
     img.save(f'src/Image_Storage/WhiteText{numImage}.png')
     return img
 
-def getTextFrom(img):
+def getCleanTextFrom(img):
     text = pytesseract.image_to_string(img)
     lines = text.split('\n')
     cleanedText = re.sub(r"[^\w\s,']", '', lines[0])
@@ -166,18 +155,22 @@ def verifyCard(text):
     return -1
 
 def getCardData(cardName):
+    global currentCard
     global numTexts
     global searchableText
-    response = requests.get(f'https://api.scryfall.com/cards/named?exact={searchableText}')
-    data = json.loads(response.text)
-    if(data["reprint"] and versionSpecific):
+    #response = requests.get(f'https://api.scryfall.com/cards/named?exact={searchableText}')
+    if(versionSpecific):
         if(autofindVersion):
-            print("")
-            # attempt to find card version here
+            version = findVersion()
+            if version != -1:
+                response = requests.get(f'https://api.scryfall.com/cards/{version}')
+            else:
+                response = requests.get(f'https://api.scryfall.com/cards/named?exact={searchableText}')
         else:
             print("")
             # prompt user to pick a version here
-    wantedProperties = ["name", "set_name", "colors", "released_at", "cmc", "type_line", "legalities", "collector_number", "rarity", "reprint"]
+    data = json.loads(response.text)
+    wantedProperties = ["name", "set_name", "colors", "released_at", "cmc", "type_line", "legalities", "collector_number", "rarity", "reprint", "prices"]
     gottenProperties = []
     tcgplayerFix = data["purchase_uris"]["tcgplayer"]
     gottenProperties.append(f'"purchase_uris":"{tcgplayerFix}"')
@@ -193,10 +186,127 @@ def getCardData(cardName):
     numTexts += 1
 
 
-temp = crop("top", 1, webcamImage)
+def findVersion():
+    # first get all needed data from all card versions
+    global currentCard
+    global searchableText
+    response = requests.get(f'https://scryfall.com/search?as=grid&order=released&q=%21%22{searchableText}%22+include%3Aextras&unique=prints')
+    htmlData = BeautifulSoup(response.content, 'html.parser')
+    elements = htmlData.find_all(attrs={"data-card-id": True})
+    cardIDs = []
+    for element in elements:
+        card_id = element["data-card-id"]
+        cardIDs.append(card_id)
+    versionIDs = []
+    versionSets = []
+    versionCollectorNums = []
+    versionArtists = []
+    versionYears = []
+    for ID in cardIDs:
+        response = requests.get(f'https://api.scryfall.com/cards/{ID}')
+        data = json.loads(response.text)
+        if "paper" not in data["games"] or data["oversized"]:
+            continue
+        else:
+            versionIDs.append(ID)
+            versionSets.append(data["set"])
+            versionCollectorNums.append(int(re.findall(r'\d+', data["collector_number"])[0]))
+            versionArtists.append(data["artist"])
+            versionDate = data["released_at"]
+            versionYears.append(versionDate[:-6])
+    # get data from the image
+    img = crop("bottom")
+    text = pytesseract.image_to_string(img)
 
-#temp = getTextFrom(thresholdImageBlackText(cropCardOne(webcamImage)))
-#print(temp)
+    # check for a valid collectors number in card data
+    collectorNumbers = re.findall(r'\d+/\d+', text)
+    collectorNumbersSplit = re.findall(r'\d+', collectorNumbers[0])
+    if len(collectorNumbers[0]) <= 7 and int(collectorNumbersSplit[1]) <= 999 and len(collectorNumbers) == 1 and len(collectorNumbersSplit) == 2:
+        print(f'valid collectors number found as {collectorNumbersSplit[0]}')
+        validCollectorNumber = collectorNumbersSplit[0]
+    else:
+        print('no valid collector number found')
+        validCollectorNumber = "nope"
 
-#temp2 = verifyCard(temp)
-#getCardData(temp2)
+    # check for a valid year in card data
+    validYear = "nope"
+    potentialYears = re.findall(r'\d+', text)
+    for year in potentialYears:
+        if int(year) >= 1993 and int(year) <= 2050:
+            print(f'valid year found as {year}')
+            validYear = year
+            break
+    if validYear == "nope":
+        print("no valid year found")
+
+    # check for a verified set code
+    found = False
+    textSplit = text.split()
+    verifiedCardData = []
+    for Set in versionSets:
+        for word in textSplit:
+            similarity = fuzz.ratio(word.upper(), Set.upper())
+            if similarity >= minSureness:
+                print(f'the set was verified as {Set}')
+                verifiedCardData.append(Set)
+                found = True
+                break
+        if found:
+            break
+
+    # check for a verified artist
+    found = False
+    artistName = ""
+    for artist in versionArtists:
+        names = artist.split()
+        if len(names) < 2:
+            continue
+        firstName = names[0]
+        lastName = names[1]
+        for word in textSplit:
+            similarityFirstName = fuzz.ratio(word.upper(), firstName.upper())
+            similarityLastname = fuzz.ratio(word.upper(), lastName.upper())
+            if similarityFirstName >= minSureness:
+                artistName += firstName
+            if similarityLastname >= minSureness and len(artistName) > 0:
+                artistName += " "
+                artistName += lastName
+                print(f'full name verified as {artistName}')
+                verifiedCardData.append(artistName)
+                found = True
+                break
+        if found:
+            break
+            
+    # attempt to verify a valid collectors number
+    if validCollectorNumber != "nope":
+        for number in versionCollectorNums:
+            if int(collectorNumbersSplit[0]) == int(number):
+                print(f'the valid collecters number, {validCollectorNumber} was verified')
+                verifiedCardData.append(int(number))
+                break
+
+    # attempt to verify a valid year
+    if validYear != "nope":
+        for year in versionYears:
+            if int(year) == int(validYear):
+                print(f'the valid year, {validYear} was verified')
+                verifiedCardData.append(year)
+                break
+
+    # match all verified card data with a specific version
+    found = False
+    print(verifiedCardData)
+    for i in range(len(versionIDs)):
+        matchingData = 0
+        for data in verifiedCardData:
+            if data == versionArtists[i] or data == int(versionCollectorNums[i]) or data == versionYears[i] or data == versionSets[i]:
+                matchingData += 1
+            if matchingData == len(verifiedCardData):
+                print(f'version Matched !!! the card id is {versionIDs[i]}')
+                found = True
+                return versionIDs[i]
+    print("no specific version could be automatically found")
+    return -1
+
+getCardData(verifyCard(getCleanTextFrom(thresholdImageBlackText(crop("top")))))
