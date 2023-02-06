@@ -58,8 +58,8 @@ def crop(cropPosition):
         cropY = cardWidth * 1.4 + cardPos[1]
     elif cropPosition == "bottom":
         convertToGrayscale = True
-        cardPos[1] = cardWidth * 1.32 + cardPos[1]
-        cropY = cardWidth * 0.08 + cardPos[1]
+        cardPos[1] = cardWidth * 1.3 + cardPos[1]
+        cropY = cardWidth * 0.1 + cardPos[1]
     elif cropPosition == "top":
         convertToGrayscale = True
         cardPos[0] = cardPos[0] + 0.059 * cardWidth
@@ -220,10 +220,14 @@ def findVersion():
 
     # check for a valid collectors number in card data
     collectorNumbers = re.findall(r'\d+/\d+', text)
-    collectorNumbersSplit = re.findall(r'\d+', collectorNumbers[0])
-    if len(collectorNumbers[0]) <= 7 and int(collectorNumbersSplit[1]) <= 999 and len(collectorNumbers) == 1 and len(collectorNumbersSplit) == 2:
-        print(f'valid collectors number found as {collectorNumbersSplit[0]}')
-        validCollectorNumber = collectorNumbersSplit[0]
+    if len(collectorNumbers) > 0:
+        collectorNumbersSplit = re.findall(r'\d+', collectorNumbers[0])
+        if len(collectorNumbers[0]) <= 7 and int(collectorNumbersSplit[1]) <= 999 and len(collectorNumbers) == 1 and len(collectorNumbersSplit) == 2:
+            print(f'valid collectors number found as {collectorNumbersSplit[0]}')
+            validCollectorNumber = collectorNumbersSplit[0]
+        else:
+            print('no valid collector number found')
+            validCollectorNumber = "nope"
     else:
         print('no valid collector number found')
         validCollectorNumber = "nope"
@@ -232,7 +236,7 @@ def findVersion():
     validYear = "nope"
     potentialYears = re.findall(r'\d+', text)
     for year in potentialYears:
-        if int(year) >= 1993 and int(year) <= 2050:
+        if int(year) >= 1994 and int(year) <= 2050:
             print(f'valid year found as {year}')
             validYear = year
             break
